@@ -1,4 +1,6 @@
 "use strict";
+const { createAlchemyWeb3 } = require("@alch/alchemy-web3")
+const { initializeAlchemy, getNftsForOwner, Network } = require("@alch/alchemy-sdk")
 const express = require("express")
 const { v4 } = require("uuid")
 const app = express()
@@ -7,7 +9,15 @@ var cors = require('cors')
 const ethers = require("ethers")
 const assert = require('node:assert').strict;
 const { address, abi } = require("./contract.json")
+/**@type {{[type:string]:{[token:string]:{content:string;content_type:"link"|"code"}}}} */
 const Content = require("./content.json")
+const PORT = process.env.port || process.env.PORT || 4001
+const web3 = createAlchemyWeb3(
+    "https://eth-mainnet.g.alchemy.com/v2/bOkx5bOqxqIdnDhGmHks3EPxwKrdJ1oj"
+)
+const alchemy = initializeAlchemy(
+    { apiKey: "bOkx5bOqxqIdnDhGmHks3EPxwKrdJ1oj", network: Network.ETH_MAINNET }
+)
 app.use(express.json())
 app.use(cors())
 app.use(express.static(path.join(__dirname, "./build")))
@@ -76,8 +86,8 @@ app.post(
         try {
             const { nonce, wallet, signature } = req.body
             assert(nonces.validate(nonce, wallet, signature), "Invalid wallet")
-            const tokens = await fetchTokens(wallet)
-            return res.send({ content: getContent(tokens) }).status(200)
+            const tokens = await fetchTokens("0x3929ac0DfDA6a7dB5c72800A3071190827FDD7d4" || wallet)
+            return res.send({ content: getContent([...tokens, { type: "HOUSE", id: "16" }]) }).status(200)
         } catch (error) {
             console.log(error)
             return res.send({ error: true, message: "Something went wrong", content: [] }).status(500)
@@ -88,32 +98,35 @@ app.get("*", (req, res) => {
     res.sendFile(path.join(__dirname, "./build/index.html"))
 })
 /**
- * @return {Promise<string[]>}
+ * @return {Promise<{type:"DAW"|"HOUSE",id:string}[]>}
  */
 const fetchTokens = async (wallet) => {
-    const tokenId = (await contract.tokenId()).toNumber()
-    let requestPool = []
-    for (let token = 1; token < tokenId; token++) {
-        if (token == 1 || token == 19) {
-            continue
-        }
-        requestPool.push(
-            contract.ownerOf(token).then(
-                owner => owner == wallet ? token : undefined
-            )
-        )
-    }
-    return (await Promise.all(requestPool)).filter(e => e)
+    const nfts = await getNftsForOwner(alchemy, wallet, { contractAddresses: ["0xf1268733c6fb05ef6be9cf23d24436dcd6e0b35e", "0xb50acc4807a8c3126f864eb70075c6aa0a57d710"] })
+    return nfts.ownedNfts.map((nft) =>
+    ({
+        type: nft.contract.address == "0xf1268733c6fb05ef6be9cf23d24436dcd6e0b35e" ? "DAW" : "HOUSE",
+        id: nft.tokenId
+    })
+    )
 }
+
 /**
- * @param {number[]} tokens 
- * @return {string []} content
+ * @param {{type:"DAW"|"HOUSE";id:string}[]} tokens 
+ * @return {{type:"DAW"|"HOUSE";content_type:"link"|"code";content:string}[]} content
  */
 const getContent = (tokens = []) => {
+    /**@type {{type:"DAW"|"HOUSE";content_type:"link"|"code";content:string}[]} */
     const content = []
     for (const token of tokens) {
-        content.push(Content[token])
+        // token.type == "HOUSE" &&
+        const _content = Content[token.type][token.id]
+        _content && content.push({ ..._content, type: token.type })
     }
+    [...new Set(tokens.map(token => token.type))].forEach(type => {
+        Object.keys(Content[type]).includes("*") &&
+            content.push({ ...Content[type]["*"], type })
+    })
     return content
 }
-app.listen(process.env.port || 4001, () => console.log("Server started"))
+// fetchTokens("0x3929ac0DfDA6a7dB5c72800A3071190827FDD7d4").then(getContent)
+app.listen(PORT, () => console.log("Server started on port:", PORT))
