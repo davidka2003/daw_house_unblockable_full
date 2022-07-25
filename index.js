@@ -86,8 +86,8 @@ app.post(
         try {
             const { nonce, wallet, signature } = req.body
             assert(nonces.validate(nonce, wallet, signature), "Invalid wallet")
-            const tokens = await fetchTokens("0x3929ac0DfDA6a7dB5c72800A3071190827FDD7d4" || wallet)
-            return res.send({ content: getContent([...tokens, { type: "HOUSE", id: "16" }]) }).status(200)
+            const tokens = await fetchTokens(wallet)
+            return res.send({ content: getContent(tokens) }).status(200)
         } catch (error) {
             console.log(error)
             return res.send({ error: true, message: "Something went wrong", content: [] }).status(500)
